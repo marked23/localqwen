@@ -16,8 +16,10 @@ hardware assumption: an NVIDIA GPU with ~8GB VRAM (requires `nvidia-smi`; the sc
 1. **Model**: `bartowski/Qwen_Qwen3.5-4B-GGUF`, file `Qwen_Qwen3.5-4B-Q6_K_L.gguf` (~4GB), downloaded via
    the `hf`/`huggingface-cli` tool into the standard `~/.cache/huggingface/hub` cache.
 2. **llama.cpp**: cloned to `~/llama.cpp` (override with `LLAMA_DIR`) and built from source with
-   `-DGGML_CUDA=ON`. If `llama-server` is already on `PATH`, the build is skipped entirely and that
-   binary is used instead.
+   `-DGGML_CUDA=ON`. If `llama-server` is already on `PATH`, the build (and the `nvcc` check below) is
+   skipped entirely and that binary is used instead. Otherwise, before building, `ensure_cuda_compiler`
+   checks for `nvcc` on `PATH` and installs it via `apt` (`nvidia-cuda-toolkit`) if missing — plain
+   `build-essential` only provides gcc/g++, which cannot compile the CUDA kernels.
 3. **Qwen Code CLI**: installed via the official standalone installer script (curl | bash) if `qwen` is
    not already on `PATH`.
 

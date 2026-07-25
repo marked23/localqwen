@@ -68,6 +68,23 @@ ensure_apt_packages() {
     fi
 }
 
+ensure_cuda_compiler() {
+    if command -v nvcc >/dev/null 2>&1; then
+        have "CUDA compiler found: nvcc $(nvcc --version | grep -oP 'release \K[0-9.]+')"
+        return
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        would "Install CUDA toolkit via apt (nvidia-cuda-toolkit) to get the nvcc compiler needed to build llama.cpp with GPU support"
+        return
+    fi
+
+    echo "Installing CUDA toolkit (nvcc) via apt"
+    sudo apt-get update
+    sudo apt-get install -y nvidia-cuda-toolkit
+    command -v nvcc >/dev/null 2>&1 || { echo "nvcc still not found after installing nvidia-cuda-toolkit" >&2; exit 1; }
+}
+
 ensure_llama_cpp() {
     log "llama.cpp"
 
@@ -76,6 +93,8 @@ ensure_llama_cpp() {
         have "llama-server already on PATH: $LLAMA_SERVER_BIN"
         return
     fi
+
+    ensure_cuda_compiler
 
     LLAMA_SERVER_BIN="$LLAMA_DIR/build/bin/llama-server"
 
