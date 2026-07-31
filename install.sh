@@ -289,6 +289,12 @@ render_qwen_settings() {
         | .security.auth = (.security.auth // {})
         | .security.auth.selectedType = (.security.auth.selectedType // "openai")
         | .model = (if (.model.name // null) == null then {name: $id, baseUrl: $base_url} else .model end)
+        | .mcpServers = ((.mcpServers // {}) + {
+            sequentialthinking: {
+                command: "npx",
+                args: ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+            }
+          })
         ' "$1"
 }
 
@@ -416,7 +422,7 @@ main() {
         echo ""
     else
         log "Done"
-        echo "Run: $SCRIPT_DIR/launch.sh"
+        echo "Run: ./launch.sh"
         echo "It starts the server (listening on http://${LLAMA_HOST_IP}:${LLAMA_PORT}, reachable from other devices on your LAN) and then launches qwen."
     fi
 }
