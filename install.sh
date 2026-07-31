@@ -7,12 +7,16 @@ MODEL_REPO="bartowski/Qwen_Qwen3.5-4B-GGUF"
 MODEL_FILE="Qwen_Qwen3.5-4B-Q6_K_L.gguf"
 QWEN_SETTINGS="$HOME/.qwen/settings.json"
 QWEN_STANDALONE_INSTALLER="https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh"
+HF_STANDALONE_INSTALLER="https://hf.co/cli/install.sh"
+LLAMA_HOST="0.0.0.0"
 LLAMA_PORT=8080
 LLAMA_CONTEXT_SIZE=65536
 
 DRY_RUN=1
 MODEL_PATH=""
 LLAMA_SERVER_BIN=""
+HF_CMD=""
+LLAMA_HOST_IP=""
 
 print_usage() {
     cat <<EOF
@@ -37,10 +41,38 @@ log() { printf '\n== %s ==\n' "$1"; }
 have() { printf '  [ok]    %s\n' "$1"; }
 would() { printf '  [would] %s\n' "$1"; }
 
+detect_lan_ip() {
+    local ip
+    ip="$(ip -4 route get 1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") print $(i+1)}')"
+    if [ -z "$ip" ]; then
+        ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    fi
+    printf '%s' "$ip"
+}
+
 check_gpu() {
     log "Checking for NVIDIA GPU"
     if ! command -v nvidia-smi >/dev/null 2>&1; then
-        echo "nvidia-smi not found. An NVIDIA GPU with drivers installed is required." >&2
+        local rec=""
+        if command -v ubuntu-drivers >/dev/null 2>&1; then
+            rec=$(ubuntu-drivers devices 2>/dev/null \
+                | awk '/recommended/ { for (i=1;i<=NF;i++) if ($i ~ /^nvidia-driver-/) print $i }' \
+                | head -1) || true
+        fi
+        if [[ -n "$rec" ]]; then
+            printf 'nvidia-smi not found. An NVIDIA GPU with drivers installed is required.\n\n' >&2
+            printf 'Detected recommended driver for this GPU: %s\nInstall it and reboot:\n' "$rec" >&2
+            printf '  sudo apt install %s\n  sudo reboot\n' "$rec" >&2
+        else
+            cat <<'EOF' >&2
+nvidia-smi not found. An NVIDIA GPU with drivers installed is required.
+
+List available drivers, then install the one tagged "recommended":
+  ubuntu-drivers devices
+  sudo apt install nvidia-driver-NNN   # use the package marked "recommended" above
+  sudo reboot
+EOF
+        fi
         exit 1
     fi
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | sed 's/^/  /'
@@ -48,7 +80,7 @@ check_gpu() {
 
 ensure_apt_packages() {
     log "Build dependencies"
-    local pkgs=(cmake build-essential python3 python3-pip python3-venv jq)
+    local pkgs=(cmake build-essential python3 jq)
     local missing=()
     for pkg in "${pkgs[@]}"; do
         dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
@@ -141,40 +173,53 @@ ensure_llama_cpp() {
     fi
 }
 
+ensure_hf_cli() {
+    if command -v hf >/dev/null 2>&1; then
+        have "hf CLI already installed: $(command -v hf)"
+        HF_CMD="hf"
+        return
+    fi
+    if command -v huggingface-cli >/dev/null 2>&1; then
+        have "huggingface-cli already installed: $(command -v huggingface-cli)"
+        HF_CMD="huggingface-cli"
+        return
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        would "Install the hf CLI via the official standalone installer"
+        return
+    fi
+
+    echo "Installing hf CLI via the official standalone installer"
+    curl -LsSf "$HF_STANDALONE_INSTALLER" | bash
+    hash -r
+    HF_CMD="hf"
+    command -v hf >/dev/null 2>&1 || HF_CMD="huggingface-cli"
+}
+
 ensure_model() {
     log "Model: $MODEL_REPO / $MODEL_FILE"
 
-    MODEL_PATH="$(find "$HOME/.cache/huggingface/hub" \( -type f -o -type l \) -name "$MODEL_FILE" 2>/dev/null | head -n1)"
+    MODEL_PATH="$(find "$HOME/.cache/huggingface/hub" \( -type f -o -type l \) -name "$MODEL_FILE" 2>/dev/null | head -n1 || true)"
     if [ -n "$MODEL_PATH" ]; then
         have "Model already downloaded: $MODEL_PATH"
         return
     fi
+
+    ensure_hf_cli
 
     if [ "$DRY_RUN" -eq 1 ]; then
         would "Download model $MODEL_REPO/$MODEL_FILE (~4GB) via huggingface-cli"
         return
     fi
 
-    local hf_cmd=""
-    if command -v hf >/dev/null 2>&1; then
-        hf_cmd="hf"
-    elif command -v huggingface-cli >/dev/null 2>&1; then
-        hf_cmd="huggingface-cli"
-    else
-        echo "Installing huggingface_hub CLI"
-        pip install --user --upgrade "huggingface_hub[cli]"
-        hash -r
-        hf_cmd="hf"
-        command -v hf >/dev/null 2>&1 || hf_cmd="huggingface-cli"
-    fi
-
-    if [ "$hf_cmd" = "hf" ]; then
+    if [ "$HF_CMD" = "hf" ]; then
         hf download "$MODEL_REPO" "$MODEL_FILE"
     else
         huggingface-cli download "$MODEL_REPO" "$MODEL_FILE"
     fi
 
-    MODEL_PATH="$(find "$HOME/.cache/huggingface/hub" \( -type f -o -type l \) -name "$MODEL_FILE" 2>/dev/null | head -n1)"
+    MODEL_PATH="$(find "$HOME/.cache/huggingface/hub" \( -type f -o -type l \) -name "$MODEL_FILE" 2>/dev/null | head -n1 || true)"
     if [ -z "$MODEL_PATH" ]; then
         echo "Could not locate downloaded model file under ~/.cache/huggingface/hub" >&2
         exit 1
@@ -200,7 +245,7 @@ ensure_qwen_code() {
 }
 
 render_qwen_settings() {
-    local base_url="http://127.0.0.1:${LLAMA_PORT}/v1"
+    local base_url="http://${LLAMA_HOST_IP}:${LLAMA_PORT}/v1"
     local default_env_key="LOCALQWEN_API_KEY"
     jq \
         --arg id "$MODEL_FILE" \
@@ -252,7 +297,7 @@ configure_qwen_settings() {
     fi
 
     if [ "$DRY_RUN" -eq 1 ]; then
-        would "Update $QWEN_SETTINGS to add/point a local model provider at http://127.0.0.1:${LLAMA_PORT}/v1"
+        would "Update $QWEN_SETTINGS to add/point a local model provider at http://${LLAMA_HOST_IP}:${LLAMA_PORT}/v1"
         rm -f "$tmp_file"
     else
         mkdir -p "$(dirname "$QWEN_SETTINGS")"
@@ -267,6 +312,7 @@ render_launch_script() {
 set -e
 
 MODEL="$MODEL_PATH"
+HOST=$LLAMA_HOST
 PORT=$LLAMA_PORT
 CONTEXT_SIZE=$LLAMA_CONTEXT_SIZE
 GPU_LAYERS=999
@@ -274,6 +320,7 @@ SLOTS=1
 
 "$LLAMA_SERVER_BIN" \\
   -m "\$MODEL" \\
+  --host "\$HOST" \\
   --port "\$PORT" \\
   -c "\$CONTEXT_SIZE" \\
   -ngl "\$GPU_LAYERS" \\
@@ -305,6 +352,12 @@ main() {
         echo "DRY RUN - checking your system, no changes will be made."
     fi
 
+    LLAMA_HOST_IP="$(detect_lan_ip)"
+    if [ -z "$LLAMA_HOST_IP" ]; then
+        echo "Warning: could not detect a LAN IP address, falling back to 127.0.0.1" >&2
+        LLAMA_HOST_IP="127.0.0.1"
+    fi
+
     check_gpu
     ensure_apt_packages
     ensure_llama_cpp
@@ -323,6 +376,7 @@ main() {
     else
         log "Done"
         echo "Start the server with: $LLAMA_DIR/launch.sh"
+        echo "It will listen on: http://${LLAMA_HOST_IP}:${LLAMA_PORT} (reachable from other devices on your LAN)"
         echo "Then run: qwen"
     fi
 }

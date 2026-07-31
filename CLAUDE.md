@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project status
 
 Implemented as a single script: `install.sh`. It is a bash installer with no build system, tests, or
-dependencies beyond what it shells out to (apt, git, cmake, jq, pip/hf, curl).
+dependencies beyond what it shells out to (apt, git, cmake, jq, hf, curl).
 
 ## Purpose
 
@@ -24,9 +24,17 @@ hardware assumption: an NVIDIA GPU with ~8GB VRAM (requires `nvidia-smi`; the sc
    not already on `PATH`.
 
 It also configures `~/.qwen/settings.json` (via `jq`) to add/update an `openai`-compatible model provider
-pointing at the local llama-server (`http://127.0.0.1:8080/v1`), and writes a `launch.sh` into the
-llama.cpp directory that starts `llama-server` with `-ngl 999` (full GPU offload) and a 65536-token
-context size.
+pointing at llama-server, and writes a `launch.sh` into the llama.cpp directory that starts
+`llama-server` with `-ngl 999` (full GPU offload) and a 65536-token context size.
+
+`launch.sh` binds llama-server to `--host 0.0.0.0` (all interfaces), not just loopback, so the API is
+reachable from other devices on the same LAN — e.g. a phone or laptop running Qwen Code pointed at this
+machine. The Qwen settings provider URL is set to the machine's detected LAN IP (`detect_lan_ip`, via
+`ip route get` falling back to `hostname -I`) rather than `127.0.0.1`, for the same reason. llama-server
+itself has no auth and permissive CORS by default (it prints its own warning about this at startup) —
+combined with the `0.0.0.0` bind, the API is unauthenticated and reachable by anything on the LAN. That's
+an intentional tradeoff for a trusted home network, not an oversight; don't quietly narrow it back to
+loopback-only without checking whether LAN reachability is still wanted.
 
 ## Usage
 
@@ -48,6 +56,12 @@ context size.
 
 ## Notes for future changes
 
+- `check_gpu`'s error message (when `nvidia-smi` is missing) runs `ubuntu-drivers devices` itself (no
+  sudo needed just to list), parses out the package tagged "recommended", and prints the exact
+  `sudo apt install <pkg>` command for this machine — falling back to generic instructions only if
+  `ubuntu-drivers` is absent or nothing is tagged recommended. This exists because the
+  `ubuntu-drivers autoinstall`/`install` subcommands are not consistently available across Ubuntu
+  releases (observed missing on 26.04).
 - Version/commit pinning for llama.cpp is "latest tracked branch tip" (fast-forward merge to `@{u}`), not
   a pinned SHA — re-runs will pull and rebuild whenever upstream moves.
 - The model file/repo, port, and context size are set as constants at the top of `install.sh`; there is
