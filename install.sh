@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LLAMA_DIR="${LLAMA_DIR:-$HOME/llama.cpp}"
 LLAMA_REPO="https://github.com/ggml-org/llama.cpp"
 MODEL_REPO="bartowski/Qwen_Qwen3.5-4B-GGUF"
@@ -346,13 +347,31 @@ SLOTS=1
   --port "\$PORT" \\
   -c "\$CONTEXT_SIZE" \\
   -ngl "\$GPU_LAYERS" \\
-  --parallel "\$SLOTS"
+  --parallel "\$SLOTS" &
+SERVER_PID=\$!
+trap 'kill \$SERVER_PID 2>/dev/null || true' EXIT
+
+echo "Waiting for llama-server to become ready..."
+until curl -sf -o /dev/null "http://127.0.0.1:\$PORT/health"; do
+    if ! kill -0 \$SERVER_PID 2>/dev/null; then
+        echo "llama-server exited before becoming ready" >&2
+        exit 1
+    fi
+    sleep 1
+done
+
+if command -v qwen >/dev/null 2>&1; then
+    qwen
+else
+    echo "qwen CLI not found on PATH; server is running at http://\$HOST:\$PORT"
+    wait \$SERVER_PID
+fi
 EOF
 }
 
 write_launch_script() {
     log "Launch script"
-    local launch_path="$LLAMA_DIR/launch.sh"
+    local launch_path="$SCRIPT_DIR/launch.sh"
 
     if [ -f "$launch_path" ] && diff -q <(render_launch_script) "$launch_path" >/dev/null 2>&1; then
         have "Launch script already up to date: $launch_path"
@@ -397,9 +416,8 @@ main() {
         echo ""
     else
         log "Done"
-        echo "Start the server with: $LLAMA_DIR/launch.sh"
-        echo "It will listen on: http://${LLAMA_HOST_IP}:${LLAMA_PORT} (reachable from other devices on your LAN)"
-        echo "Then run: qwen"
+        echo "Run: $SCRIPT_DIR/launch.sh"
+        echo "It starts the server (listening on http://${LLAMA_HOST_IP}:${LLAMA_PORT}, reachable from other devices on your LAN) and then launches qwen."
     fi
 }
 

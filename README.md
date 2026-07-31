@@ -42,8 +42,8 @@ Running `install.sh` gets you, end to end:
    existing build is used.
 3. **Qwen Code CLI** — installed via the official installer, if not already present.
 4. **Wiring** — `~/.qwen/settings.json` is updated to point Qwen Code at an OpenAI-compatible
-   endpoint on `http://127.0.0.1:8080/v1`, and a `launch.sh` script is dropped into the
-   llama.cpp directory that starts `llama-server` with full GPU offload (`-ngl 999`) and a
+   endpoint on `http://<your-lan-ip>:8080/v1`, and a `launch.sh` script is dropped into this
+   repo's folder that starts `llama-server` with full GPU offload (`-ngl 999`) and a
    65536-token context window.
 
 That's it — no config files to hand-edit, no flags to tune. The script is intentionally
@@ -83,19 +83,15 @@ current (and picks up llama.cpp updates if any are available upstream).
 
 ### Running it
 
-Once installed, start the model server:
+Once installed, run (from the `localqwen` folder):
 
 ```bash
-~/llama.cpp/launch.sh
+./launch.sh
 ```
 
-Then, in another terminal:
-
-```bash
-qwen
-```
-
-Qwen Code will talk to the local server instead of a cloud API.
+This starts the model server in the background, waits until it's ready, and then launches
+`qwen` in the same terminal — talking to the local server instead of a cloud API. Closing that
+terminal (or exiting `qwen`) stops the server too.
 
 ## Notes
 

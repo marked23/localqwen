@@ -24,8 +24,12 @@ hardware assumption: an NVIDIA GPU with ~8GB VRAM (requires `nvidia-smi`; the sc
    not already on `PATH`.
 
 It also configures `~/.qwen/settings.json` (via `jq`) to add/update an `openai`-compatible model provider
-pointing at llama-server, and writes a `launch.sh` into the llama.cpp directory that starts
-`llama-server` with `-ngl 999` (full GPU offload) and a 65536-token context size.
+pointing at llama-server, and writes a `launch.sh` into this repo's own directory (`SCRIPT_DIR`, i.e.
+wherever `install.sh` lives, not `LLAMA_DIR`) that starts `llama-server` with `-ngl 999` (full GPU
+offload) and a 65536-token context size. `launch.sh` runs the server in the background, polls
+`/health` until it responds 200, then execs `qwen` in the same terminal — so a beginner only has to
+run one command in one terminal; exiting `qwen` (or closing the terminal) kills the server via an
+`EXIT` trap. `launch.sh` is generated, not checked in — it's gitignored.
 
 `launch.sh` binds llama-server to `--host 0.0.0.0` (all interfaces), not just loopback, so the API is
 reachable from other devices on the same LAN — e.g. a phone or laptop running Qwen Code pointed at this
