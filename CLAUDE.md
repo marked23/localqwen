@@ -36,6 +36,33 @@ combined with the `0.0.0.0` bind, the API is unauthenticated and reachable by an
 an intentional tradeoff for a trusted home network, not an oversight; don't quietly narrow it back to
 loopback-only without checking whether LAN reachability is still wanted.
 
+## Security model
+
+This installer trusts several remote parties by design, and that's a deliberate tradeoff, not an
+oversight:
+
+- **Two `curl | bash` installs**: the `hf` CLI (`$HF_STANDALONE_INSTALLER`, `hf.co/cli/install.sh`) and
+  the Qwen Code CLI (`$QWEN_STANDALONE_INSTALLER`, an Alibaba OSS-hosted script). Both are run via a
+  live pipe, not downloaded-then-inspected, and neither is pinned to a hash. Every call site (normal run
+  and `--install`) prints the exact URL immediately before executing it, and dry-run mode
+  (`would "... curl ... | bash"`) shows the same command without running it — so the URL is visible
+  before a user ever passes `--install`, not just discoverable by reading the source.
+- **Model weights**: `hf download` pulls a GGUF blob from a third-party HF repo (`bartowski/...`). This
+  is data, not executable code, but it's still a supply-chain trust point worth naming — a malicious or
+  compromised GGUF isn't a known code-execution vector, but the repo owner isn't Alibaba/Qwen or a first
+  party.
+- **llama.cpp**: cloned from `ggml-org/llama.cpp` upstream and built from source (see commit-pinning note
+  below) — the same trust level as any from-source dependency build.
+
+Mitigation approach taken: transparency over gating. No confirmation prompts, no `--no-verify` style
+flag, no hash pinning — that would add friction to every run (violating the turnkey/idempotent design
+goals above) in exchange for a checkbox users would habitually click through. Instead, each remote-script
+step names its exact URL at the point of execution and in dry-run output, and this section documents the
+trust boundaries once, up front, the same way the `0.0.0.0`/LAN-exposure tradeoff below is documented
+rather than gated. If this policy changes (e.g. pinning installer scripts to a known-good hash, or
+switching to download-then-exec so the script is inspectable before running), update both call sites in
+`ensure_hf_cli` and `ensure_qwen_code` together, plus this section.
+
 ## Usage
 
 - `./install.sh` — dry run (default). Prints what's already present and what would change; makes no

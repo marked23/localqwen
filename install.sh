@@ -37,9 +37,22 @@ for arg in "$@"; do
     esac
 done
 
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    COLOR_GREEN=$'\033[32m'
+    COLOR_YELLOW=$'\033[33m'
+    COLOR_RED=$'\033[31m'
+    COLOR_RESET=$'\033[0m'
+else
+    COLOR_GREEN=""
+    COLOR_YELLOW=""
+    COLOR_RED=""
+    COLOR_RESET=""
+fi
+
 log() { printf '\n== %s ==\n' "$1"; }
-have() { printf '  [ok]    %s\n' "$1"; }
-would() { printf '  [would] %s\n' "$1"; }
+have() { printf '  %s[ok]%s    %s\n' "$COLOR_GREEN" "$COLOR_RESET" "$1"; }
+would() { printf '  %s[would]%s %s\n' "$COLOR_YELLOW" "$COLOR_RESET" "$1"; }
+remote_script() { printf '%sremote script: %s%s' "$COLOR_RED" "$1" "$COLOR_RESET"; }
 
 detect_lan_ip() {
     local ip
@@ -175,22 +188,28 @@ ensure_llama_cpp() {
 
 ensure_hf_cli() {
     if command -v hf >/dev/null 2>&1; then
-        have "hf CLI already installed: $(command -v hf)"
+        local hf_msg
+        printf -v hf_msg 'hf CLI already installed: %s\n            (would otherwise run %s)' \
+            "$(command -v hf)" "$(remote_script "$HF_STANDALONE_INSTALLER")"
+        have "$hf_msg"
         HF_CMD="hf"
         return
     fi
     if command -v huggingface-cli >/dev/null 2>&1; then
-        have "huggingface-cli already installed: $(command -v huggingface-cli)"
+        local hf_cli_msg
+        printf -v hf_cli_msg 'huggingface-cli already installed: %s\n            (would otherwise run %s)' \
+            "$(command -v huggingface-cli)" "$(remote_script "$HF_STANDALONE_INSTALLER")"
+        have "$hf_cli_msg"
         HF_CMD="huggingface-cli"
         return
     fi
 
     if [ "$DRY_RUN" -eq 1 ]; then
-        would "Install the hf CLI via the official standalone installer"
+        would "Install the hf CLI by running (curl -LsSf | bash) a $(remote_script "$HF_STANDALONE_INSTALLER")"
         return
     fi
 
-    echo "Installing hf CLI via the official standalone installer"
+    echo "Installing hf CLI by running (curl -LsSf | bash) a $(remote_script "$HF_STANDALONE_INSTALLER")"
     curl -LsSf "$HF_STANDALONE_INSTALLER" | bash
     hash -r
     HF_CMD="hf"
@@ -200,13 +219,13 @@ ensure_hf_cli() {
 ensure_model() {
     log "Model: $MODEL_REPO / $MODEL_FILE"
 
+    ensure_hf_cli
+
     MODEL_PATH="$(find "$HOME/.cache/huggingface/hub" \( -type f -o -type l \) -name "$MODEL_FILE" 2>/dev/null | head -n1 || true)"
     if [ -n "$MODEL_PATH" ]; then
         have "Model already downloaded: $MODEL_PATH"
         return
     fi
-
-    ensure_hf_cli
 
     if [ "$DRY_RUN" -eq 1 ]; then
         would "Download model $MODEL_REPO/$MODEL_FILE (~4GB) via huggingface-cli"
@@ -230,16 +249,19 @@ ensure_model() {
 ensure_qwen_code() {
     log "Qwen Code CLI"
     if command -v qwen >/dev/null 2>&1; then
-        have "qwen already installed: $(command -v qwen)"
+        local qwen_msg
+        printf -v qwen_msg 'qwen already installed: %s\n            (would otherwise run %s)' \
+            "$(command -v qwen)" "$(remote_script "$QWEN_STANDALONE_INSTALLER")"
+        have "$qwen_msg"
         return
     fi
 
     if [ "$DRY_RUN" -eq 1 ]; then
-        would "Install Qwen Code CLI via the official standalone installer"
+        would "Install Qwen Code CLI by running (curl -fsSL | bash) a $(remote_script "$QWEN_STANDALONE_INSTALLER")"
         return
     fi
 
-    echo "Running official Qwen Code standalone installer"
+    echo "Installing Qwen Code CLI by running (curl -fsSL | bash) a $(remote_script "$QWEN_STANDALONE_INSTALLER")"
     curl -fsSL "$QWEN_STANDALONE_INSTALLER" | bash
     hash -r
 }

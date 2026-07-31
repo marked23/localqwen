@@ -7,6 +7,29 @@ It's aimed at people who want to *try* a local coding assistant on modest hardwa
 figuring out llama.cpp, GGUF quantizations, or CLI configuration by hand. Point it at a laptop
 with an 8GB NVIDIA GPU and run one command.
 
+## Fair warning
+
+This is a shell script you found on the internet, and running it means trusting the people who
+wrote it. Worth knowing before you do:
+
+- **It curls and executes other shell scripts.** Installing the `hf` CLI and the Qwen Code CLI
+  both work by piping an installer script straight from its source into `bash`, unpinned. You're
+  trusting those upstreams (Hugging Face, Alibaba) as much as you're trusting this repo.
+- **It downloads a model from a third party.** The GGUF weights come from a community repo on
+  Hugging Face (`bartowski/...`), not from Qwen or Alibaba directly. It's data rather than code,
+  but it's still a supply-chain link outside this project's control.
+- **It builds and runs software from source.** llama.cpp is cloned from upstream and compiled on
+  your machine.
+- **It exposes an unauthenticated API on your LAN.** `launch.sh` binds llama-server to
+  `0.0.0.0`, and Qwen Code is pointed at your machine's LAN IP rather than `localhost`. That's
+  intentional — it's what lets a phone or another laptop on the same network use it — but it
+  means anything else on your network can reach it too.
+
+None of this is unusual for dev tooling (plenty of popular install scripts work exactly this
+way), and the script prints every URL it's about to run before it runs it — dry-run mode shows
+you the same thing without executing anything. Read the output, look at `install.sh` if you want
+to see for yourself, and run it on a network and machine you trust.
+
 ## What it does
 
 Running `install.sh` gets you, end to end:
