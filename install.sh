@@ -293,6 +293,10 @@ render_qwen_settings() {
             sequentialthinking: {
                 command: "npx",
                 args: ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+            },
+            memory: {
+                command: "npx",
+                args: ["-y", "@modelcontextprotocol/server-memory"]
             }
           })
         ' "$1"
