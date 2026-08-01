@@ -396,6 +396,7 @@ CONTEXT_SIZE=$LLAMA_CONTEXT_SIZE
 GPU_LAYERS=999
 SLOTS=1
 QWEN_MODEL_ID="$MODEL_FILE"
+LOG_FILE="$SCRIPT_DIR/llama-server.log"
 
 "$LLAMA_SERVER_BIN" \\
   -m "\$MODEL" \\
@@ -403,14 +404,15 @@ QWEN_MODEL_ID="$MODEL_FILE"
   --port "\$PORT" \\
   -c "\$CONTEXT_SIZE" \\
   -ngl "\$GPU_LAYERS" \\
-  --parallel "\$SLOTS" &
+  --parallel "\$SLOTS" > "\$LOG_FILE" 2>&1 &
 SERVER_PID=\$!
 trap 'kill \$SERVER_PID 2>/dev/null || true' EXIT
 
+echo "llama-server output is being logged to \$LOG_FILE"
 echo "Waiting for llama-server to become ready..."
 until curl -sf -o /dev/null "http://127.0.0.1:\$PORT/health"; do
     if ! kill -0 \$SERVER_PID 2>/dev/null; then
-        echo "llama-server exited before becoming ready" >&2
+        echo "llama-server exited before becoming ready; see \$LOG_FILE" >&2
         exit 1
     fi
     sleep 1
