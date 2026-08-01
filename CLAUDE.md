@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project status
 
 Implemented as a single script: `install.sh`. It is a bash installer with no build system, tests, or
-dependencies beyond what it shells out to (apt, git, cmake, jq, hf, curl).
+dependencies beyond what it shells out to (apt, git, cmake, jq, hf, curl, node/npx).
 
 ## Purpose
 
@@ -23,13 +23,21 @@ hardware assumption: an NVIDIA GPU with ~8GB VRAM (requires `nvidia-smi`; the sc
 3. **Qwen Code CLI**: installed via the official standalone installer script (curl | bash) if `qwen` is
    not already on `PATH`.
 
-It also configures `~/.qwen/settings.json` (via `jq`) to add/update an `openai`-compatible model provider
-pointing at llama-server, and writes a `launch.sh` into this repo's own directory (`SCRIPT_DIR`, i.e.
-wherever `install.sh` lives, not `LLAMA_DIR`) that starts `llama-server` with `-ngl 999` (full GPU
-offload) and a 65536-token context size. `launch.sh` runs the server in the background, polls
-`/health` until it responds 200, then execs `qwen` in the same terminal — so a beginner only has to
-run one command in one terminal; exiting `qwen` (or closing the terminal) kills the server via an
-`EXIT` trap. `launch.sh` is generated, not checked in — it's gitignored.
+Before any of the above, `ensure_node` checks for `npx` on `PATH` and installs it via `apt`
+(`nodejs npm`) if missing — needed both to run the MCP servers below and because the Qwen Code
+standalone installer itself expects Node available.
+
+It also configures `~/.qwen/settings.json` (via `jq`, in `render_qwen_settings`) to add/update an
+`openai`-compatible model provider pointing at llama-server, and to add/update two MCP servers under
+`mcpServers` — `sequentialthinking` (`@modelcontextprotocol/server-sequential-thinking`) and `memory`
+(`@modelcontextprotocol/server-memory`), both run via `npx -y` so no separate install step is needed.
+Both merges are additive (`(.mcpServers // {}) + {...}`), so any other MCP servers the user has
+configured by hand are preserved. It also writes a `launch.sh` into this repo's own directory
+(`SCRIPT_DIR`, i.e. wherever `install.sh` lives, not `LLAMA_DIR`) that starts `llama-server` with
+`-ngl 999` (full GPU offload) and a 65536-token context size. `launch.sh` runs the server in the
+background, polls `/health` until it responds 200, then execs `qwen` in the same terminal — so a
+beginner only has to run one command in one terminal; exiting `qwen` (or closing the terminal) kills
+the server via an `EXIT` trap. `launch.sh` is generated, not checked in — it's gitignored.
 
 `launch.sh` binds llama-server to `--host 0.0.0.0` (all interfaces), not just loopback, so the API is
 reachable from other devices on the same LAN — e.g. a phone or laptop running Qwen Code pointed at this
@@ -57,6 +65,10 @@ oversight:
   party.
 - **llama.cpp**: cloned from `ggml-org/llama.cpp` upstream and built from source (see commit-pinning note
   below) — the same trust level as any from-source dependency build.
+- **MCP servers via `npx -y`**: `render_qwen_settings` configures two MCP servers,
+  `@modelcontextprotocol/server-sequential-thinking` and `@modelcontextprotocol/server-memory` (both
+  official MCP reference servers), to be launched with `npx -y` whenever Qwen Code starts them — `npx`
+  fetches and runs the package on demand rather than something `install.sh` vets or pins a version of.
 
 Mitigation approach taken: transparency over gating. No confirmation prompts, no `--no-verify` style
 flag, no hash pinning — that would add friction to every run (violating the turnkey/idempotent design
@@ -75,7 +87,7 @@ switching to download-then-exec so the script is inspectable before running), up
 
 ## Design constraints preserved by the current implementation
 
-- **Idempotency**: every step (`ensure_apt_packages`, `ensure_llama_cpp`, `ensure_model`,
+- **Idempotency**: every step (`ensure_apt_packages`, `ensure_node`, `ensure_llama_cpp`, `ensure_model`,
   `ensure_qwen_code`, `configure_qwen_settings`, `write_launch_script`) checks current state before
   acting — dpkg queries, `command -v`, HEAD-vs-remote commit comparison plus a build stamp file
   (`build/.installed_commit`), file existence, and content diffing (for the settings JSON and launch

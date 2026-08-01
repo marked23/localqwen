@@ -114,6 +114,24 @@ ensure_apt_packages() {
     fi
 }
 
+ensure_node() {
+    log "Node.js / npx"
+    if command -v npx >/dev/null 2>&1; then
+        have "npx already on PATH: $(command -v npx) ($(node --version))"
+        return
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        would "Install Node.js via apt (nodejs npm) to get npx, needed to launch this repo's MCP servers"
+        return
+    fi
+
+    echo "Installing Node.js via apt (nodejs npm)"
+    sudo apt-get update
+    sudo apt-get install -y nodejs npm
+    command -v npx >/dev/null 2>&1 || { echo "npx still not found after installing nodejs/npm" >&2; exit 1; }
+}
+
 ensure_cuda_compiler() {
     if command -v nvcc >/dev/null 2>&1; then
         have "CUDA compiler found: nvcc $(nvcc --version | grep -oP 'release \K[0-9.]+')"
@@ -411,6 +429,7 @@ main() {
 
     check_gpu
     ensure_apt_packages
+    ensure_node
     ensure_llama_cpp
     ensure_model
     ensure_qwen_code
