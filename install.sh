@@ -4,8 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LLAMA_DIR="${LLAMA_DIR:-$HOME/llama.cpp}"
 LLAMA_REPO="https://github.com/ggml-org/llama.cpp"
-MODEL_REPO="bartowski/Qwen_Qwen3.5-4B-GGUF"
-MODEL_FILE="Qwen_Qwen3.5-4B-Q6_K_L.gguf"
+
+# MODEL_REPO0="bartowski/Qwen_Qwen3.5-4B-GGUF"
+# MODEL_FILE0="Qwen_Qwen3.5-4B-Q6_K_L.gguf"
+
+MODEL_REPO="unsloth/Qwen3.5-4B-GGUF"
+MODEL_FILE="Qwen3.5-4B-Q5_K_M.gguf"
+
 QWEN_SETTINGS="$HOME/.qwen/settings.json"
 QWEN_STANDALONE_INSTALLER="https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh"
 HF_STANDALONE_INSTALLER="https://hf.co/cli/install.sh"
