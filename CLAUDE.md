@@ -4,8 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Implemented as a single script: `install.sh`. It is a bash installer with no build system, tests, or
-dependencies beyond what it shells out to (apt, git, cmake, jq, hf, curl, node/npx).
+Implemented as two scripts: `install.sh`, the main bash installer, and `select-model.sh`, which it
+shells out to for the model-selection menu. No build system, tests, or dependencies beyond what they
+shell out to (apt, git, cmake, jq, hf, curl, node/npx).
 
 ## Purpose
 
@@ -13,8 +14,8 @@ An idempotent, turnkey installation tool that prepares a laptop to run a small l
 hardware assumption: an NVIDIA GPU with ~8GB VRAM (requires `nvidia-smi`; the script exits if not found).
 
 `install.sh` sets up:
-1. **Model**: `bartowski/Qwen_Qwen3.5-4B-GGUF`, file `Qwen_Qwen3.5-4B-Q6_K_L.gguf` (~4GB), downloaded via
-   the `hf`/`huggingface-cli` tool into the standard `~/.cache/huggingface/hub` cache.
+1. **Model**: chosen at runtime from the `models.json` catalog (see below), downloaded via the
+   `hf`/`huggingface-cli` tool into the standard `~/.cache/huggingface/hub` cache.
 2. **llama.cpp**: cloned to `~/llama.cpp` (override with `LLAMA_DIR`) and built from source with
    `-DGGML_CUDA=ON`. If `llama-server` is already on `PATH`, the build (and the `nvcc` check below) is
    skipped entirely and that binary is used instead. Otherwise, before building, `ensure_cuda_compiler`
@@ -35,9 +36,12 @@ Both merges are additive (`(.mcpServers // {}) + {...}`), so any other MCP serve
 configured by hand are preserved. It also writes a `launch.sh` into this repo's own directory
 (`SCRIPT_DIR`, i.e. wherever `install.sh` lives, not `LLAMA_DIR`) that starts `llama-server` with
 `-ngl 999` (full GPU offload) and a 65536-token context size. `launch.sh` runs the server in the
-background, polls `/health` until it responds 200, then execs `qwen` in the same terminal — so a
-beginner only has to run one command in one terminal; exiting `qwen` (or closing the terminal) kills
-the server via an `EXIT` trap. `launch.sh` is generated, not checked in — it's gitignored.
+background, polls `/health` until it responds 200, then execs `qwen --model "$MODEL_FILE"` in the same
+terminal — the `--model` value matches the `id`/`name` that `render_qwen_settings` gave this model's
+entry in `~/.qwen/settings.json`, so Qwen Code actually talks to the model llama-server just loaded
+rather than whatever provider happens to be the settings-file default. This means a beginner only has to
+run one command in one terminal; exiting `qwen` (or closing the terminal) kills the server via an `EXIT`
+trap. `launch.sh` is generated, not checked in — it's gitignored.
 
 `launch.sh` binds llama-server to `--host 0.0.0.0` (all interfaces), not just loopback, so the API is
 reachable from other devices on the same LAN — e.g. a phone or laptop running Qwen Code pointed at this
@@ -47,6 +51,35 @@ itself has no auth and permissive CORS by default (it prints its own warning abo
 combined with the `0.0.0.0` bind, the API is unauthenticated and reachable by anything on the LAN. That's
 an intentional tradeoff for a trusted home network, not an oversight; don't quietly narrow it back to
 loopback-only without checking whether LAN reachability is still wanted.
+
+## Model catalog (`models.json`)
+
+`models.json` is checked in and is the single source of truth for which models can be installed. Each
+entry carries `id`, `name`, `repo`, `file`, `context_size`, `min_vram_gb`, `download_size_gb`, and a
+one-line `description`; a top-level `default` names the `id` pre-selected in the menu.
+
+Menu presentation and input live in `select-model.sh`, a standalone script that `install.sh`'s
+`select_model` (called after `ensure_apt_packages`, because it needs `jq`) invokes and captures via
+`eval "$(select-model.sh "$MODELS_JSON" "$GPU_VRAM_GB")"`. `select-model.sh` prints the catalog as a
+numbered menu to stderr, marking each entry as fitting or too big for the passed-in GPU VRAM figure, and
+reads a choice from stdin. Pressing `[enter]` takes the `default`; with no TTY the default is taken
+silently so piped/CI runs still work. On completion it prints the selected model's fields to stdout as
+`KEY='value'` shell assignments (`MODEL_REPO`, `MODEL_FILE`, `MODEL_NAME`, `LLAMA_CONTEXT_SIZE`,
+`MODEL_MIN_VRAM_GB`) — this stdout/stderr split is what lets `install.sh` `eval` just the assignments
+while the menu and prompts still reach the terminal. `check_gpu` (in `install.sh`) populates
+`GPU_VRAM_GB` from the largest `nvidia-smi memory.total` (whole GB, rounded down — multi-GPU splitting is
+not attempted) and passes it to `select-model.sh`; if that read fails, `GPU_VRAM_GB` is empty and all fit
+checks are skipped rather than guessed at.
+
+`select-model.sh` also warns and requires an explicit `y` if the chosen model's `min_vram_gb` exceeds the
+passed-in GPU VRAM figure, before printing the stdout assignments. Answering `y` is a deliberate user
+override — the install proceeds normally with that model. Without a TTY this refuses (exits non-zero,
+propagating through `install.sh`'s `eval` under `set -e`) rather than silently installing something that
+won't fit.
+
+`min_vram_gb` is hand-specified per entry rather than computed from weights + KV cache, so adding a model
+means picking that number deliberately. Keep the list ordered smallest-to-largest — the menu prints it in
+file order.
 
 ## Security model
 
@@ -92,10 +125,12 @@ switching to download-then-exec so the script is inspectable before running), up
   acting — dpkg queries, `command -v`, HEAD-vs-remote commit comparison plus a build stamp file
   (`build/.installed_commit`), file existence, and content diffing (for the settings JSON and launch
   script) — and is a no-op when already correct.
-- **Turnkey**: no interactive prompts; GPU presence is detected via `nvidia-smi`, and all install steps
-  run unattended once `--install` is passed.
-- **8GB GPU assumption**: a ~4GB Q6_K_L quantization leaves headroom under 8GB VRAM for the 65536-token
-  KV cache at `-ngl 999` (full offload).
+- **Turnkey**: exactly one interactive prompt — the model menu (and a second y/N only when the chosen
+  model exceeds detected VRAM). Both accept `[enter]` for the safe path, and both fall back sensibly
+  without a TTY. GPU presence is detected via `nvidia-smi`; everything else runs unattended once
+  `--install` is passed.
+- **8GB GPU assumption**: the catalog default (`qwen3.5-4b-q5`, ~3GB) leaves headroom under 8GB VRAM for
+  the 65536-token KV cache at `-ngl 999` (full offload). Larger entries exist for bigger cards.
 
 ## Notes for future changes
 
@@ -107,5 +142,6 @@ switching to download-then-exec so the script is inspectable before running), up
   releases (observed missing on 26.04).
 - Version/commit pinning for llama.cpp is "latest tracked branch tip" (fast-forward merge to `@{u}`), not
   a pinned SHA — re-runs will pull and rebuild whenever upstream moves.
-- The model file/repo, port, and context size are set as constants at the top of `install.sh`; there is
-  no config file or CLI flag to override them (aside from `LLAMA_DIR` via env var).
+- The model repo/file, context size, and VRAM requirement come from `models.json`, not from constants in
+  `install.sh`. Port and host remain constants at the top of the script; `LLAMA_DIR` is the only env-var
+  override.

@@ -5,24 +5,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LLAMA_DIR="${LLAMA_DIR:-$HOME/llama.cpp}"
 LLAMA_REPO="https://github.com/ggml-org/llama.cpp"
 
-# MODEL_REPO0="bartowski/Qwen_Qwen3.5-4B-GGUF"
-# MODEL_FILE0="Qwen_Qwen3.5-4B-Q6_K_L.gguf"
-
-MODEL_REPO="unsloth/Qwen3.5-4B-GGUF"
-MODEL_FILE="Qwen3.5-4B-Q5_K_M.gguf"
+MODELS_JSON="$SCRIPT_DIR/models.json"
 
 QWEN_SETTINGS="$HOME/.qwen/settings.json"
 QWEN_STANDALONE_INSTALLER="https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh"
 HF_STANDALONE_INSTALLER="https://hf.co/cli/install.sh"
 LLAMA_HOST="0.0.0.0"
 LLAMA_PORT=8080
-LLAMA_CONTEXT_SIZE=65536
 
 DRY_RUN=1
 MODEL_PATH=""
 LLAMA_SERVER_BIN=""
 HF_CMD=""
 LLAMA_HOST_IP=""
+
+# Set by select_model() from the chosen models.json entry.
+MODEL_REPO=""
+MODEL_FILE=""
+MODEL_NAME=""
+LLAMA_CONTEXT_SIZE=""
+MODEL_MIN_VRAM_GB=""
+GPU_VRAM_GB=""
 
 print_usage() {
     cat <<EOF
@@ -95,6 +98,23 @@ EOF
         exit 1
     fi
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | sed 's/^/  /'
+
+    # Largest single GPU, in whole GB rounded down. Multi-GPU splitting is not
+    # attempted, so the biggest card is what a model has to fit in.
+    local mib
+    mib="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null \
+        | sort -rn | head -n1 | tr -d ' ')"
+    if [[ "$mib" =~ ^[0-9]+$ ]]; then
+        GPU_VRAM_GB=$(( mib / 1024 ))
+    else
+        GPU_VRAM_GB=""
+        echo "  Warning: could not read GPU memory size; VRAM fit checks will be skipped." >&2
+    fi
+}
+
+select_model() {
+    log "Model selection"
+    eval "$("$SCRIPT_DIR/select-model.sh" "$MODELS_JSON" "$GPU_VRAM_GB")"
 }
 
 ensure_apt_packages() {
@@ -252,7 +272,9 @@ ensure_model() {
     fi
 
     if [ "$DRY_RUN" -eq 1 ]; then
-        would "Download model $MODEL_REPO/$MODEL_FILE (~4GB) via huggingface-cli"
+        local size
+        size="$(jq -r --arg f "$MODEL_FILE" '.models[] | select(.file == $f) | .download_size_gb' "$MODELS_JSON" 2>/dev/null || true)"
+        would "Download model $MODEL_REPO/$MODEL_FILE (~${size:-?}GB) via huggingface-cli"
         return
     fi
 
@@ -373,6 +395,7 @@ PORT=$LLAMA_PORT
 CONTEXT_SIZE=$LLAMA_CONTEXT_SIZE
 GPU_LAYERS=999
 SLOTS=1
+QWEN_MODEL_ID="$MODEL_FILE"
 
 "$LLAMA_SERVER_BIN" \\
   -m "\$MODEL" \\
@@ -394,7 +417,7 @@ until curl -sf -o /dev/null "http://127.0.0.1:\$PORT/health"; do
 done
 
 if command -v qwen >/dev/null 2>&1; then
-    qwen
+    qwen --model "\$QWEN_MODEL_ID"
 else
     echo "qwen CLI not found on PATH; server is running at http://\$HOST:\$PORT"
     wait \$SERVER_PID
@@ -434,6 +457,7 @@ main() {
 
     check_gpu
     ensure_apt_packages
+    select_model
     ensure_node
     ensure_llama_cpp
     ensure_model
