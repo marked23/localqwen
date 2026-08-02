@@ -7,7 +7,7 @@
       "repo": "unsloth/Qwen3.5-4B-GGUF",
       "file": "Qwen3.5-4B-Q4_K_M.gguf",
       "context_size": 65536,
-      "min_vram_gb": 8,
+      "min_vram_gb": 6,
       "download_size_gb": 2.5,
       "description": "Smallest and fastest. Lowest quality of the 4B options."
     },
@@ -17,7 +17,7 @@
       "repo": "unsloth/Qwen3.5-4B-GGUF",
       "file": "Qwen3.5-4B-Q5_K_M.gguf",
       "context_size": 262144,
-      "min_vram_gb": 16,
+      "min_vram_gb": 13,
       "download_size_gb": 3.0,
       "description": "Balanced default for an 8GB card."
     },
@@ -27,7 +27,7 @@
       "repo": "bartowski/Qwen_Qwen3.5-4B-GGUF",
       "file": "Qwen_Qwen3.5-4B-Q6_K_L.gguf",
       "context_size": 65536,
-      "min_vram_gb": 8,
+      "min_vram_gb": 7,
       "download_size_gb": 3.8,
       "description": "Higher quality 4B, near-lossless. Consumes about 8GB VRAM at 64k context."
     },
@@ -37,7 +37,7 @@
       "repo": "bartowski/Qwen_Qwen3.5-4B-GGUF",
       "file": "Qwen_Qwen3.5-4B-Q6_K_L.gguf",
       "context_size": 262144,
-      "min_vram_gb": 16,
+      "min_vram_gb": 14,
       "download_size_gb": 3.8,
       "description": "Higher quality 4B, near-lossless. Consumes about 13GB VRAM at 256k context."
     },
@@ -47,7 +47,7 @@
       "repo": "bartowski/Qwen_Qwen3.5-4B-GGUF",
       "file": "Qwen_Qwen3.5-4B-bf16.gguf",
       "context_size": 65536,
-      "min_vram_gb": 24,
+      "min_vram_gb": 12,
       "download_size_gb": 8.1,
       "description": "Full-precision, no quantization loss. Largest and slowest of the 4B options."
     },
@@ -57,7 +57,7 @@
       "repo": "bartowski/Qwen_Qwen3.5-4B-GGUF",
       "file": "Qwen_Qwen3.5-4B-bf16.gguf",
       "context_size": 262144,
-      "min_vram_gb": 24,
+      "min_vram_gb": 18,
       "download_size_gb": 8.1,
       "description": "Full-precision, no quantization loss. Largest and slowest of the 4B options."
     }
