@@ -35,13 +35,16 @@ It also configures `~/.qwen/settings.json` (via `jq`, in `render_qwen_settings`)
 Both merges are additive (`(.mcpServers // {}) + {...}`), so any other MCP servers the user has
 configured by hand are preserved. It also writes a `launch.sh` into this repo's own directory
 (`SCRIPT_DIR`, i.e. wherever `install.sh` lives, not `LLAMA_DIR`) that starts `llama-server` with
-`-ngl 999` (full GPU offload) and a 65536-token context size. `launch.sh` runs the server in the
-background, polls `/health` until it responds 200, then execs `qwen --model "$MODEL_FILE"` in the same
-terminal — the `--model` value matches the `id`/`name` that `render_qwen_settings` gave this model's
-entry in `~/.qwen/settings.json`, so Qwen Code actually talks to the model llama-server just loaded
-rather than whatever provider happens to be the settings-file default. This means a beginner only has to
-run one command in one terminal; exiting `qwen` (or closing the terminal) kills the server via an `EXIT`
-trap. `launch.sh` is generated, not checked in — it's gitignored.
+`-ngl 999` (full GPU offload) and the model's `context_size` from `models.json`. `launch.sh` runs the
+server in the background with stdout/stderr redirected to `llama-server.log` (also in `SCRIPT_DIR`),
+polls `/health` until it responds 200 — printing the log path up front and again if the server exits
+before becoming ready, so a startup failure points straight at the log — then execs
+`qwen --model "$MODEL_FILE"` in the same terminal. The `--model` value matches the `id`/`name` that
+`render_qwen_settings` gave this model's entry in `~/.qwen/settings.json`, so Qwen Code actually talks to
+the model llama-server just loaded rather than whatever provider happens to be the settings-file default.
+This means a beginner only has to run one command in one terminal; exiting `qwen` (or closing the
+terminal) kills the server via an `EXIT` trap. `launch.sh` and `llama-server.log` are generated, not
+checked in — both are gitignored.
 
 `launch.sh` binds llama-server to `--host 0.0.0.0` (all interfaces), not just loopback, so the API is
 reachable from other devices on the same LAN — e.g. a phone or laptop running Qwen Code pointed at this
@@ -129,8 +132,9 @@ switching to download-then-exec so the script is inspectable before running), up
   model exceeds detected VRAM). Both accept `[enter]` for the safe path, and both fall back sensibly
   without a TTY. GPU presence is detected via `nvidia-smi`; everything else runs unattended once
   `--install` is passed.
-- **8GB GPU assumption**: the catalog default (`qwen3.5-4b-q5`, ~3GB) leaves headroom under 8GB VRAM for
-  the 65536-token KV cache at `-ngl 999` (full offload). Larger entries exist for bigger cards.
+- **8GB GPU assumption**: the catalog default (`qwen3.5-4b-q4-64k`, ~2.5GB download, `min_vram_gb: 6`)
+  leaves headroom under 8GB VRAM for the 65536-token KV cache at `-ngl 999` (full offload). Larger
+  entries exist for bigger cards; `min_vram_gb` is a hand-tuned estimate per entry, not computed.
 
 ## Notes for future changes
 
